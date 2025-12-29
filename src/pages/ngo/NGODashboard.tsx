@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import { useAuth } from '../AuthContext';
 import { DollarSign, Users, TrendingUp, FolderOpen, Bell, Heart, ArrowRight, Clock } from 'lucide-react';
 
 interface NGODashboardProps {
@@ -5,33 +7,77 @@ interface NGODashboardProps {
 }
 
 function NGODashboard({ onNavigate }: NGODashboardProps) {
-  // Dummy data
-  const summaryData = {
-    totalDonationsReceived: 850000,
-    utilizedFunds: 680000,
-    activeDonors: 48,
-    activeProjects: 15,
-  };
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [summaryData, setSummaryData] = useState({
+    totalDonationsReceived: 0,
+    utilizedFunds: 0,
+    activeDonors: 0,
+    activeProjects: 0,
+    additionalDonationsSinceLastLogin: 0,
+    utilizationChangePercent: null as number | null,
+    newDonorsSinceLastLogin: 0,
+  });
 
-  const recentDonations = [
-    { id: 1, donor: 'Rajesh Kumar', amount: 25000, date: '2025-12-20', project: 'School Infrastructure', new: true },
-    { id: 2, donor: 'Priya Sharma', amount: 15000, date: '2025-12-19', project: 'Medical Equipment', new: true },
-    { id: 3, donor: 'Amit Patel', amount: 20000, date: '2025-12-18', project: 'Books and Learning Materials', new: false },
-    { id: 4, donor: 'Sunita Reddy', amount: 10000, date: '2025-12-17', project: 'Student Scholarships', new: false },
-  ];
+  const [recentDonations, setRecentDonations] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [activeProjects, setActiveProjects] = useState<any[]>([]);
+  const { token } = useAuth();
 
-  const notifications = [
-    { id: 1, type: 'donation', message: 'New donation of ₹25,000 from Rajesh Kumar', time: '2 hours ago', read: false },
-    { id: 2, type: 'request', message: 'Funding request approved by TechCorp India', time: '5 hours ago', read: false },
-    { id: 3, type: 'utilization', message: 'Utilization report due for School Infrastructure project', time: '1 day ago', read: true },
-    { id: 4, type: 'donor', message: 'New donor Priya Sharma registered', time: '2 days ago', read: true },
-  ];
+  useEffect(() => {
 
-  const activeProjects = [
-    { name: 'School Infrastructure', budget: 200000, utilized: 85, donors: 12 },
-    { name: 'Medical Equipment', budget: 150000, utilized: 72, donors: 8 },
-    { name: 'Student Scholarships', budget: 120000, utilized: 90, donors: 15 },
-  ];
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      console.debug('NGODashboard - token', token);
+      try {
+        const headers: any = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        console.debug('NGODashboard - fetch headers', headers);
+        const res = await fetch('/api/ngo/dashboard', { headers });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || 'Failed to fetch dashboard data');
+        }
+
+        const text = await res.text();
+        let data: any;
+        try {
+          data = JSON.parse(text);
+        } catch (err) {
+          throw new Error('Invalid JSON response from server: ' + (text || String(err)));
+        }
+
+        const summary = data.summary || {};
+        setSummaryData({
+          totalDonationsReceived: summary.totalDonationsReceived || 0,
+          utilizedFunds: summary.utilizedFunds || 0,
+          activeDonors: summary.activeDonors || 0,
+          activeProjects: summary.activeProjects || 0,
+          additionalDonationsSinceLastLogin: summary.additionalDonationsSinceLastLogin || 0,
+          utilizationChangePercent: summary.utilizationChangePercent ?? null,
+          newDonorsSinceLastLogin: summary.newDonorsSinceLastLogin || 0,
+        });
+        setRecentDonations((data.recentDonations || []).map((d: any, idx: number) => ({
+          id: d.donation_id || idx,
+          donor: d.donor || 'Unknown',
+          amount: d.amount,
+          date: d.date || d.donated_at,
+          project: d.project_name || '',
+          new: false
+        })));
+        setNotifications(data.notifications || []);
+        setActiveProjects(data.activeProjects || []);
+      } catch (err: any) {
+        setError(err.message || 'Server error');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [token]);
+
 
   const quickActions = [
     { label: 'Manage Donors', page: 'ngo-donors', icon: <Users className="w-6 h-6" />, color: 'from-blue-500 to-blue-600' },
@@ -50,13 +96,20 @@ function NGODashboard({ onNavigate }: NGODashboardProps) {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {loading ? (
+          <div className="mb-8 text-center text-gray-600">Loading dashboard...</div>
+        ) : error ? (
+          <div className="mb-8 text-center text-red-600">{error}</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-blue-500">
             <div className="flex items-center justify-between mb-2">
               <div className="p-3 bg-blue-100 rounded-lg">
                 <DollarSign className="w-6 h-6 text-blue-600" />
               </div>
-              <span className="text-sm text-green-600 font-semibold">+15.2%</span>
+              {summaryData.additionalDonationsSinceLastLogin > 0 && (
+                <span className="text-sm text-green-600 font-semibold">+{summaryData.additionalDonationsSinceLastLogin}</span>
+              )}
             </div>
             <h3 className="text-gray-600 text-sm font-medium mb-1">Total Donations Received</h3>
             <p className="text-2xl font-bold text-gray-800">
@@ -69,7 +122,11 @@ function NGODashboard({ onNavigate }: NGODashboardProps) {
               <div className="p-3 bg-green-100 rounded-lg">
                 <TrendingUp className="w-6 h-6 text-green-600" />
               </div>
-              <span className="text-sm text-green-600 font-semibold">80%</span>
+              {summaryData.utilizationChangePercent !== null && Math.abs(summaryData.utilizationChangePercent) > 0 && (
+                <span className={`text-sm font-semibold ${summaryData.utilizationChangePercent > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {summaryData.utilizationChangePercent > 0 ? '+' : ''}{summaryData.utilizationChangePercent}%
+                </span>
+              )}
             </div>
             <h3 className="text-gray-600 text-sm font-medium mb-1">Utilized Funds</h3>
             <p className="text-2xl font-bold text-gray-800">
@@ -82,7 +139,9 @@ function NGODashboard({ onNavigate }: NGODashboardProps) {
               <div className="p-3 bg-purple-100 rounded-lg">
                 <Users className="w-6 h-6 text-purple-600" />
               </div>
-              <span className="text-sm text-blue-600 font-semibold">+8 new</span>
+              {summaryData.newDonorsSinceLastLogin > 0 && (
+                <span className="text-sm text-blue-600 font-semibold">+{summaryData.newDonorsSinceLastLogin} new</span>
+              )}
             </div>
             <h3 className="text-gray-600 text-sm font-medium mb-1">Active Donors</h3>
             <p className="text-2xl font-bold text-gray-800">{summaryData.activeDonors}</p>
@@ -93,12 +152,15 @@ function NGODashboard({ onNavigate }: NGODashboardProps) {
               <div className="p-3 bg-orange-100 rounded-lg">
                 <FolderOpen className="w-6 h-6 text-orange-600" />
               </div>
-              <span className="text-sm text-green-600 font-semibold">3 ongoing</span>
+              {summaryData.activeProjects > 0 && (
+                <span className="text-sm text-green-600 font-semibold">{summaryData.activeProjects} ongoing</span>
+              )}
             </div>
             <h3 className="text-gray-600 text-sm font-medium mb-1">Active Projects</h3>
             <p className="text-2xl font-bold text-gray-800">{summaryData.activeProjects}</p>
           </div>
-        </div>
+          </div>
+        )}
 
         {/* Notifications Banner */}
         <div className="bg-gradient-to-r from-blue-600 to-green-600 text-white rounded-xl shadow-lg p-6 mb-8">
@@ -108,20 +170,20 @@ function NGODashboard({ onNavigate }: NGODashboardProps) {
               <h2 className="text-xl font-bold">Recent Notifications</h2>
             </div>
             <span className="px-3 py-1 bg-white/20 rounded-full text-sm font-semibold">
-              {notifications.filter(n => !n.read).length} New
+              {notifications.filter(n => !n.is_read).length} New
             </span>
           </div>
           <div className="space-y-2">
-            {notifications.slice(0, 3).map((notification) => (
+            {notifications.slice(0, 3).map((notification: any) => (
               <div
-                key={notification.id}
+                key={notification.notification_id || notification.id}
                 className={`p-3 rounded-lg ${
-                  notification.read ? 'bg-white/10' : 'bg-white/20'
+                  notification.is_read ? 'bg-white/10' : 'bg-white/20'
                 }`}
               >
                 <div className="flex items-start justify-between">
                   <p className="text-sm flex-1">{notification.message}</p>
-                  <span className="text-xs text-blue-100 ml-3">{notification.time}</span>
+                  <span className="text-xs text-blue-100 ml-3">{notification.created_at}</span>
                 </div>
               </div>
             ))}
@@ -179,7 +241,7 @@ function NGODashboard({ onNavigate }: NGODashboardProps) {
                     <p className="text-xs text-gray-500">{donation.date}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-gray-800">₹{donation.amount.toLocaleString()}</p>
+                    <p className="font-bold text-gray-800">₹{Number(donation.amount || 0).toLocaleString()}</p>
                   </div>
                 </div>
               ))}

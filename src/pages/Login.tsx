@@ -11,13 +11,29 @@ type UserRole = 'admin' | 'ngo' | 'donor' | 'user';
 function Login({ onNavigate }: LoginProps) {
   const [isSignup, setIsSignup] = useState(false);
   const [selectedRole, setSelectedRole] = useState<UserRole>('user');
+  const [signupStep, setSignupStep] = useState<number>(1);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     confirmPassword: '',
+    phone: '',
+    dob: '',
+    gender: '',
+    pan_number: '',
+    aadhaar_number: '',
     organization: '',
+    registration_number: '',
+    registration_date: '',
+    category: '',
+    city: '',
+    state: '',
+    country: '',
+    mission: '',
+    vision: '',
+    website: ''
   });
+
   const { login } = useAuth();
 
   const roles = [
@@ -55,34 +71,129 @@ function Login({ onNavigate }: LoginProps) {
     },
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (isSignup && formData.password !== formData.confirmPassword) {
-      alert('Passwords do not match!');
+  const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  // 1️⃣ Basic validation
+  if (isSignup && formData.password !== formData.confirmPassword) {
+    alert("Passwords do not match");
+    return;
+  }
+
+  try {
+    // 2️⃣ AUTH API (login / signup)
+    const authEndpoint = isSignup
+      ? "/api/auth/signup"
+      : "/api/auth/login";
+
+    const authPayload = {
+      email: formData.email,
+      password: formData.password,
+      role: selectedRole,
+      name: formData.name,
+      organization: formData.organization,
+    };
+
+    const authRes = await fetch(authEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(authPayload),
+    });
+
+    const authData = await authRes.json();
+    console.debug('auth response', authData);
+
+    if (!authRes.ok) {
+      alert(authData.error || "Authentication failed");
       return;
     }
 
-    // Simulate login/signup
-    login(selectedRole);
-    
-    // Redirect based on role
-    if (selectedRole === 'donor') {
-      onNavigate('donor-dashboard');
-    } else if (selectedRole === 'admin') {
-      onNavigate('dashboard'); // Admin dashboard (to be created)
-    } else if (selectedRole === 'ngo') {
-      onNavigate('dashboard'); // NGO dashboard (to be created)
-    } else {
-      onNavigate('dashboard'); // User dashboard (to be created)
+    // 3️⃣ Save auth context (store token & user_id if provided)
+    login(authData.role, authData.token ?? null, authData.user_id ?? null);
+
+    // 4️⃣ CREATE PROFILE ONLY DURING SIGNUP
+    if (isSignup) {
+      // ---- DONOR PROFILE ----
+      if (selectedRole === "donor") {
+        await fetch("/api/profile/donor", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: authData.user_id,
+            name: formData.name,
+            phone: formData.phone,
+            dob: formData.dob || null,
+            gender: formData.gender || null,
+            pan_number: formData.pan_number || null,
+            aadhaar_number: formData.aadhaar_number || null,
+          }),
+        });
+      }
+
+      // ---- NGO PROFILE ----
+      if (selectedRole === "ngo") {
+        await fetch("/api/profile/ngo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: authData.user_id,
+            registration_number: formData.registration_number,
+            registration_date: formData.registration_date,
+            category: formData.category,
+            phone: formData.phone,
+            city: formData.city,
+            state: formData.state,
+            country: formData.country,
+            mission: formData.mission || null,
+            vision: formData.vision || null,
+            website: formData.website || null,
+          }),
+        });
+      }
     }
-  };
+
+    // 5️⃣ ROLE-BASED REDIRECT
+    if (authData.role === "donor") {
+      onNavigate("donor-dashboard");
+    } else if (authData.role === "ngo") {
+      onNavigate("ngo-dashboard");
+    } else if (authData.role === "admin") {
+      onNavigate("dashboard");
+    } else {
+      onNavigate("dashboard");
+    }
+
+  } catch (err) {
+    console.error(err);
+    alert("Server error. Please try again.");
+  }
+};
+
+
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
     });
+  };
+
+  // Multi-step controls for signup
+  const handleNext = () => {
+    // Basic validation before moving to step 2
+    if (formData.password !== formData.confirmPassword) {
+      alert('Passwords do not match');
+      return;
+    }
+
+    setSignupStep(2);
+  };
+
+  const handleBack = () => setSignupStep(1);
+
+  const toggleSignup = () => {
+    setIsSignup((prev) => !prev);
+    setSignupStep(1);
   };
 
   return (
@@ -245,32 +356,241 @@ function Login({ onNavigate }: LoginProps) {
                   </div>
                 )}
 
-                {!isSignup && (
-                  <div className="flex items-center justify-between text-sm">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                      />
-                      <span className="ml-2 text-gray-600">Remember me</span>
-                    </label>
-                    <a href="#" className="text-blue-600 hover:text-blue-700 font-medium">
-                      Forgot password?
-                    </a>
+                {/* Multi-step signup: Step 1 shows Next, Step 2 shows remaining fields */}
+                {isSignup && signupStep === 1 && (
+                  <div className="space-y-4">
+                    <p className="text-sm text-gray-600">One more step — fill the next section to complete sign up.</p>
+                    <div className="flex space-x-3">
+                      <button
+                        type="button"
+                        onClick={handleNext}
+                        className="w-full bg-gradient-to-r from-blue-600 to-green-600 text-white py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-green-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                      >
+                        Sign Up
+                      </button>
+                      <button
+                        type="button"
+                        onClick={toggleSignup}
+                        className="w-full border border-gray-300 rounded-lg py-3 text-gray-700 hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 )}
 
-                <button
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-blue-600 to-green-600 text-white py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-green-700 transition-all duration-200 shadow-lg hover:shadow-xl"
-                >
-                  {isSignup ? 'Create Account' : 'Sign In'}
-                </button>
+                {isSignup && signupStep === 2 && (
+                  <>
+                    <p className="text-sm text-gray-600">Fill these to complete sign up.</p>
+
+                    {/* Donor fields */}
+                    {selectedRole === 'donor' && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                          <input
+                            name="phone"
+                            value={formData.phone}
+                            onChange={handleInputChange}
+                            placeholder="Phone"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Date of Birth</label>
+                          <input
+                            type="date"
+                            name="dob"
+                            value={formData.dob}
+                            onChange={handleInputChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">PAN Number</label>
+                          <input
+                            name="pan_number"
+                            value={formData.pan_number}
+                            onChange={handleInputChange}
+                            placeholder="PAN Number"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {/* NGO fields */}
+                    {selectedRole === 'ngo' && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Registration Number</label>
+                          <input
+                            name="registration_number"
+                            value={formData.registration_number}
+                            onChange={handleInputChange}
+                            placeholder="Registration Number"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Registration Date</label>
+                          <input
+                            type="date"
+                            name="registration_date"
+                            value={formData.registration_date}
+                            onChange={handleInputChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                          <input
+                            name="category"
+                            value={formData.category}
+                            onChange={handleInputChange}
+                            placeholder="Category"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                          <input
+                            name="phone"
+                            value={formData.phone}
+                            onChange={handleInputChange}
+                            placeholder="Phone"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                          <input
+                            name="city"
+                            value={formData.city}
+                            onChange={handleInputChange}
+                            placeholder="City"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">State</label>
+                          <input
+                            name="state"
+                            value={formData.state}
+                            onChange={handleInputChange}
+                            placeholder="State"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Country</label>
+                          <input
+                            name="country"
+                            value={formData.country}
+                            onChange={handleInputChange}
+                            placeholder="Country"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Mission</label>
+                          <input
+                            name="mission"
+                            value={formData.mission}
+                            onChange={handleInputChange}
+                            placeholder="Mission"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Vision</label>
+                          <input
+                            name="vision"
+                            value={formData.vision}
+                            onChange={handleInputChange}
+                            placeholder="Vision"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Website</label>
+                          <input
+                            name="website"
+                            value={formData.website}
+                            onChange={handleInputChange}
+                            placeholder="Website"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    <div className="flex items-center justify-between space-x-3">
+                      <button
+                        type="button"
+                        onClick={handleBack}
+                        className="w-1/3 text-sm text-gray-600 hover:text-gray-800"
+                      >
+                        ← Back
+                      </button>
+
+                      <button
+                        type="submit"
+                        className="w-2/3 bg-gradient-to-r from-blue-600 to-green-600 text-white py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-green-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                      >
+                        Create Account
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {!isSignup && (
+                  <>
+                    <div className="flex items-center justify-between text-sm">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <span className="ml-2 text-gray-600">Remember me</span>
+                      </label>
+                      <a href="#" className="text-blue-600 hover:text-blue-700 font-medium">
+                        Forgot password?
+                      </a>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full mt-2 bg-gradient-to-r from-blue-600 to-green-600 text-white py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-green-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                    >
+                      Sign In
+                    </button>
+                  </>
+                )}
 
                 <div className="text-center">
                   <button
                     type="button"
-                    onClick={() => setIsSignup(!isSignup)}
+                    onClick={toggleSignup}
                     className="text-sm text-gray-600 hover:text-gray-800"
                   >
                     {isSignup ? (
